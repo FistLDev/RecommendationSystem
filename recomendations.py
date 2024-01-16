@@ -1,9 +1,14 @@
 import numpy as np
 import pandas as pd
-from scipy.linalg import svd
 
+ratings = pd.read_csv('ratings.csv')
+new_ratings = pd.read_csv('new_ratings.csv')
+Music_Info = pd.read_csv('Music_Info.csv')
 
-def generate_recommendations(user_track_ids, ratings, new_ratings, num_recommendations=10):
+def generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10):
+    user_tracks_name = list(user_tracks.split(', '))
+    user_track_ids = Music_Info[(Music_Info['name'].isin(user_tracks_name))]['track_id'].tolist()
+
     user_preference_vector = create_preference_vector(user_track_ids, ratings.columns)
 
     if isinstance(new_ratings, pd.DataFrame):
@@ -39,11 +44,7 @@ def sort_and_filter_tracks(user_predicted_ratings, user_track_ids, all_track_ids
     sorted_tracks = sorted(track_ratings.items(), key=lambda x: x[1], reverse=True)
     return [track[0] for track in sorted_tracks]
 
-
-# Пример использования:
-ratings = pd.read_csv('ratings.csv')
-new_ratings = pd.read_csv('new_ratings.csv')
-user_track_ids = ['TRIOREW128F424EAF0', 'TRLNZBD128F935E4D8']
-
-recommendations = generate_recommendations(user_track_ids, ratings, new_ratings, num_recommendations=10)
-print(recommendations)
+def recommendations(user_tracks):
+    recommendations_id = generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10)
+    recommendations_list = Music_Info[(Music_Info['track_id'].isin(recommendations_id))]['name'].tolist()
+    return ', '.join(recommendations_list)
