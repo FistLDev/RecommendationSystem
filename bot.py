@@ -10,7 +10,7 @@ import pandas as pd
 # Команда старта
 # @dp.message_handler(commands=['start'])
 async def send_welcome(message: Message, bot: Bot):
-    await message.reply("Привет! Напиши мне свои любимые жанры или исполнителей, и я порекомендую тебе музыку.")
+    await message.reply("Привет! Напиши мне свои любимые треки, и я порекомендую тебе музыку.")
 
 
 # Обработка сообщений пользователя
