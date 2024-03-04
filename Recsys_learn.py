@@ -183,14 +183,26 @@ calc_precision('prediction_svd')
 
 #Провераем работы модели на примере
 #Функция генерации рекомендаций
-def generate_recommendations(user_track_ids, ratings, new_ratings, num_recommendations=10):
+def generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10):
+    user_tracks_name = list(user_tracks.split(', '))
+    user_track_ids = Music_Info[(Music_Info['name'].isin(user_tracks_name))]['track_id'].tolist()
+
     user_preference_vector = create_preference_vector(user_track_ids, ratings.columns)
-    user_predicted_ratings = np.dot(new_ratings, user_preference_vector).flatten()
 
-    # Отфильтровываем уже выбранные треки и сортируем оставшиеся
-    recommendations = sort_and_filter_tracks(user_predicted_ratings, user_track_ids, ratings.columns)
+    if isinstance(new_ratings, pd.DataFrame):
+        new_ratings = new_ratings.apply(pd.to_numeric, errors='coerce').fillna(0)
 
-    return recommendations[:num_recommendations]
+    if isinstance(new_ratings, pd.DataFrame):
+        new_ratings = new_ratings.values
+
+    try:
+        user_predicted_ratings = np.dot(new_ratings, user_preference_vector).flatten()
+        # Отфильтровываем уже выбранные треки и сортируем оставшиеся
+        recommendations = sort_and_filter_tracks(user_predicted_ratings, user_track_ids, ratings.columns)
+
+        return recommendations[:num_recommendations]
+    except TypeError as e:
+        print("Произошла ошибка:", e)
 
 # Функция создания вектор предпочтений пользователя
 def create_preference_vector(user_track_ids, all_track_ids):
@@ -207,9 +219,10 @@ def sort_and_filter_tracks(user_predicted_ratings, user_track_ids, all_track_ids
     return [track[0] for track in sorted_tracks]
 
 # Пример использования:
-user_track_ids = ['TRIOREW128F424EAF0', 'TRLNZBD128F935E4D8']
-recommendations = generate_recommendations(user_track_ids, ratings, new_ratings, num_recommendations=10)
+user_tracks = ['TRIOREW128F424EAF0', 'TRLNZBD128F935E4D8']
+recommendations = generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10)
 print(recommendations)
+
 
 # Предположим, что U, sigma и Vt - это ваши матрицы, полученные из SVD
 # Сохранение матриц U, Sigma и Vt
