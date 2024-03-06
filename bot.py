@@ -7,6 +7,11 @@ from aiogram.filters import Command
 import numpy as np
 import pandas as pd
 
+Загружаем данные для работы модели
+ratings = pd.read_csv('ratings.csv')
+new_ratings = pd.read_csv('new_ratings.csv')
+Music_Info = pd.read_csv('Music_Info.csv')
+
 # Команда старта
 # @dp.message_handler(commands=['start'])
 async def send_welcome(message: Message, bot: Bot):
@@ -17,17 +22,11 @@ async def send_welcome(message: Message, bot: Bot):
 # @dp.message_handler(lambda message: message.Text)
 async def recommend_music(message: Message, bot: Bot):
     user_preferences = message.text
-    # TODO: Обработка предпочтений пользователя и получение рекомендаций
+# Обработка предпочтений пользователя и получение рекомендаций
     recommendations = generate_recommendations(user_preferences)
     await message.reply(f"Вот что я нашел для тебя: {recommendations}")
 
-
-def generate_recommendations(user_tracks):
-    # TODO: Используйте модель для генерации рекомендаций на основе ввода пользователя
-    ratings = pd.read_csv('ratings.csv')
-    new_ratings = pd.read_csv('new_ratings.csv')
-    Music_Info = pd.read_csv('Music_Info.csv')
-
+ # Используйте модель для генерации рекомендаций на основе ввода пользователя
     def generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10):
         user_tracks_name = list(user_tracks.split(', '))
         user_track_ids = Music_Info[(Music_Info['name'].isin(user_tracks_name))]['track_id'].tolist()
@@ -72,14 +71,15 @@ def generate_recommendations(user_tracks):
 
     return recommendations(user_tracks)
 
-
+#  Объявляем асинхронную функцию start
 async def start():
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s - [%(levelname)s] - %(name)s-"
                                "(%(filename)s).%(funcName)s(%(lineno)d) - %(message)s"
                         )
-
+# Создает экземпляр бота, используя токен из настроек cfg.settings
     bot = Bot(token=cfg.settings["TOKEN"])
+# Создает диспетчер для обработки входящих сообщений
     dp = Dispatcher()
     dp.message.register(send_welcome, Command(commands=['start']))
     dp.message.register(recommend_music)
@@ -89,6 +89,6 @@ async def start():
     finally:
         await bot.session.close()
 
-
+# Запускает асинхронную функцию start()
 if __name__ == '__main__':
     asyncio.run(start())
