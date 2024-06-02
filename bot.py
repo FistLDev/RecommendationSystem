@@ -1,78 +1,83 @@
 import cfg
 import asyncio
-import logging 
+import logging
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message, ContentType
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command
 import numpy as np
 import pandas as pd
+from tensorflow.keras.models import load_model
 
 # Команда старта
-# @dp.message_handler(commands=['start'])
-async def send_welcome(message: Message, bot: Bot):
+async def send_welcome(message: Message):
     await message.reply("Привет! Напиши мне свои любимые треки, и я порекомендую тебе музыку.")
 
-
 # Обработка сообщений пользователя
-# @dp.message_handler(lambda message: message.Text)
-async def recommend_music(message: Message, bot: Bot):
+async def recommend_music(message: Message):
     user_preferences = message.text
-    # TODO: Обработка предпочтений пользователя и получение рекомендаций
-    recommendations = generate_recommendations(user_preferences)
-    await message.reply(f"Вот что я нашел для тебя: {recommendations}")
+    recommendations, next_batch_available = generate_recommendations(user_preferences)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Прислать еще", callback_data="more_recommendations")]
+    ]) if next_batch_available else None
 
+    await message.reply(f"Вот что я нашел для тебя:\n{recommendations}", parse_mode='HTML', reply_markup=keyboard)
 
-def generate_recommendations(user_tracks):
-    # TODO: Используйте модель для генерации рекомендаций на основе ввода пользователя
+# Функция для обработки нажатия кнопки "Прислать еще"
+async def more_recommendations(callback_query: CallbackQuery):
+    message = callback_query.message
+    user_preferences = message.reply_to_message.text
+    recommendations, next_batch_available = generate_recommendations(user_preferences, offset=10)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Прислать еще", callback_data="more_recommendations")]
+    ]) if next_batch_available else None
+
+    await callback_query.message.answer(f"Вот еще что я нашел для тебя:\n{recommendations}", parse_mode='HTML', reply_markup=keyboard)
+
+# Функция генерации рекомендаций на основе модели
+def generate_recommendations(user_tracks, offset=0):
     ratings = pd.read_csv('ratings.csv')
-    new_ratings = pd.read_csv('new_ratings.csv')
     Music_Info = pd.read_csv('Music_Info.csv')
+    model = load_model('recommendation_model.h5')  # Загружаем модель
 
-    def generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10):
-        user_tracks_name = list(user_tracks.split(', '))
-        user_track_ids = Music_Info[(Music_Info['name'].isin(user_tracks_name))]['track_id'].tolist()
+    user_tracks_name = user_tracks.split(', ')
+    user_track_ids = Music_Info[Music_Info['name'].isin(user_tracks_name)]['track_id'].tolist()
 
-        user_preference_vector = create_preference_vector(user_track_ids, ratings.columns)
+    user_preference_vector = create_preference_vector(user_track_ids, ratings.columns)
 
-        if isinstance(new_ratings, pd.DataFrame):
-            new_ratings = new_ratings.apply(pd.to_numeric, errors='coerce').fillna(0)
+    # Приведение размерности вектора предпочтений к размерности, ожидаемой моделью
+    if user_preference_vector.shape[0] != model.input_shape[1]:
+        user_preference_vector = np.resize(user_preference_vector, (model.input_shape[1],))
 
-        if isinstance(new_ratings, pd.DataFrame):
-            new_ratings = new_ratings.values
+    # Предсказание рейтингов для пользователя
+    user_predicted_ratings = model.predict(user_preference_vector.reshape(1, -1)).flatten()
 
-        try:
-            user_predicted_ratings = np.dot(new_ratings, user_preference_vector).flatten()
-            # Отфильтровываем уже выбранные треки и сортируем оставшиеся
-            recommendations = sort_and_filter_tracks(user_predicted_ratings, user_track_ids, ratings.columns)
+    recommendations = sort_and_filter_tracks(user_predicted_ratings, user_track_ids, ratings.columns)
+    recommendations_info = Music_Info[Music_Info['track_id'].isin(recommendations[offset:offset + 10])][
+        ['name', 'artist', 'spotify_preview_url']]
 
-            return recommendations[:num_recommendations]
-        except TypeError as e:
-            print("Произошла ошибка:", e)
+    recommendations_list = [
+        f"<a href='{row['spotify_preview_url']}'>{row['name']} - {row['artist']}</a>"
+        for _, row in recommendations_info.iterrows()
+    ]
 
-    def create_preference_vector(user_track_ids, all_track_ids):
-        # Вектор предпочтений, где 1 означает, что пользователь выбрал этот трек
-        preference_vector = np.zeros(len(all_track_ids))
-        track_indices = []
-        for track_id in user_track_ids:
-            if track_id in all_track_ids:
-                track_indices.append(list(all_track_ids).index(track_id))
-        preference_vector[track_indices] = 1
-        return preference_vector
+    next_batch_available = len(recommendations) > offset + 10
+    return '\n'.join(recommendations_list), next_batch_available
 
-    def sort_and_filter_tracks(user_predicted_ratings, user_track_ids, all_track_ids):
-        track_ratings = {track_id: rating for track_id, rating in zip(all_track_ids, user_predicted_ratings) if
-                         track_id not in user_track_ids}
-        sorted_tracks = sorted(track_ratings.items(), key=lambda x: x[1], reverse=True)
-        return [track[0] for track in sorted_tracks]
+# Функция создания вектора предпочтений пользователя
+def create_preference_vector(user_track_ids, all_track_ids):
+    preference_vector = np.zeros(len(all_track_ids))
+    track_indices = [list(all_track_ids).index(track_id) for track_id in user_track_ids if track_id in all_track_ids]
+    preference_vector[track_indices] = 1
+    return preference_vector
 
-    def recommendations(user_tracks):
-        recommendations_id = generate_recommendations(user_tracks, ratings, new_ratings, num_recommendations=10)
-        recommendations_list = Music_Info[(Music_Info['track_id'].isin(recommendations_id))]['name'].tolist()
-        return ', '.join(recommendations_list)
+# Функция сортировки и фильтрации треков на основе предсказанных рейтингов
+def sort_and_filter_tracks(user_predicted_ratings, user_track_ids, all_track_ids):
+    track_ratings = {track_id: rating for track_id, rating in zip(all_track_ids, user_predicted_ratings) if
+                     track_id not in user_track_ids}
+    sorted_tracks = sorted(track_ratings.items(), key=lambda x: x[1], reverse=True)
+    return [track[0] for track in sorted_tracks]
 
-    return recommendations(user_tracks)
-
-
+# Основная функция для запуска бота
 async def start():
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s - [%(levelname)s] - %(name)s-"
@@ -81,14 +86,15 @@ async def start():
 
     bot = Bot(token=cfg.settings["TOKEN"])
     dp = Dispatcher()
+
     dp.message.register(send_welcome, Command(commands=['start']))
     dp.message.register(recommend_music)
+    dp.callback_query.register(more_recommendations, lambda c: c.data == "more_recommendations")
 
     try:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
-
 
 if __name__ == '__main__':
     asyncio.run(start())
